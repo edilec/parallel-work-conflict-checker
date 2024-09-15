@@ -1,17 +1,53 @@
 {
   "name": "parallel-work-conflict-checker",
-  "version": "0.0.0",
-  "description": "Find overlapping file ownership and merge risk across parallel work lanes.",
+  "version": "0.1.0",
+  "description": "Compare declared parallel-lane path globs and local change sets, and report overlapping ownership, contended generated files, shared dependency lockfiles and merge order, with a witness path for every overlap.",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test"
+    "lint": "node --check bin/parallel-work-conflict-checker.mjs && node --check src/destination.mjs && node --check src/glob.mjs && node --check src/index.mjs && node --check src/lanes.mjs && node --check src/text.mjs && node --check test/acceptance.test.mjs && node --check test/cli.test.mjs && node --check test/destination.test.mjs && node --check test/determinism.test.mjs && node --check test/glob.test.mjs && node --check test/helpers.mjs && node --check test/incomplete.test.mjs && node --check test/limits.test.mjs && node --check test/ordering.test.mjs && node --check test/parse-failure.test.mjs && node --check test/rule-catalog.test.mjs && node --check test/sanitisation.test.mjs && node --check test/severity-outcomes.test.mjs",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=src/**",
+    "example": "node bin/parallel-work-conflict-checker.mjs --lanes examples/disjoint-lanes.json",
+    "example:failing": "node bin/parallel-work-conflict-checker.mjs --lanes examples/contended-lanes.json; test $? -eq 1",
+    "pack:check": "npm pack --dry-run",
+    "check": "npm run lint && npm test && npm run example && npm run example:failing && npm run pack:check"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/edilec/parallel-work-conflict-checker"
-  }
+    "url": "git+https://github.com/edilec/parallel-work-conflict-checker.git"
+  },
+  "bin": {
+    "parallel-work-conflict-checker": "./bin/parallel-work-conflict-checker.mjs"
+  },
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "examples",
+    "docs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "parallel-work",
+    "glob",
+    "merge-conflict",
+    "ownership",
+    "lockfile",
+    "monorepo",
+    "worktree",
+    "cli"
+  ],
+  "author": "Edilec Private Limited",
+  "bugs": {
+    "url": "https://github.com/edilec/parallel-work-conflict-checker/issues"
+  },
+  "homepage": "https://github.com/edilec/parallel-work-conflict-checker#readme"
 }

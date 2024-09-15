@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1",
+  "integrationOwner": "platform",
+  "sharedArtifacts": ["package-lock.json", "src/generated/**"],
+  "lanes": [
+    {
+      "id": "billing",
+      "owns": ["src/billing/**", "docs/billing/*.md", "test/billing/**"],
+      "changes": ["src/billing/invoice.mjs", "test/billing/invoice.test.mjs", "package-lock.json"],
+      "dependsOn": ["platform"]
+    },
+    {
+      "id": "checkout",
+      "owns": ["src/checkout/**", "docs/checkout/*.md", "test/checkout/**"],
+      "changes": ["src/checkout/cart.mjs", "package-lock.json"],
+      "dependsOn": ["platform"]
+    },
+    {
+      "id": "platform",
+      "owns": ["src/platform/**", "src/generated/**", "package-lock.json"],
+      "changes": ["src/platform/config.mjs", "src/generated/routes.mjs", "package-lock.json"]
+    }
+  ]
+}
