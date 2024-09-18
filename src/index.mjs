@@ -410,6 +410,25 @@ export async function checkParallelWork(options = {}) {
   let limitReached = false
 
   /**
+   * Record an intersection the bounded search did not decide.
+   *
+   * Every call site below is a place where "not determined" could otherwise be
+   * read as "does not match", which is the one inference this tool exists to
+   * refuse. `overlap-unresolved` is an incomplete rule, so recording it here
+   * withdraws the merge order and exits 2 rather than letting an unexamined
+   * pattern pair reach the end of the run as a pass.
+   */
+  const addUnresolved = (pointer, message) => {
+    pairsUnresolved += 1
+    add('overlap-unresolved', {
+      file: documentName,
+      pointer,
+      message,
+      suggestion: 'Simplify the patterns, or raise --max-product-states deliberately. An undetermined pair is not a disjoint pair.',
+    })
+  }
+
+  /**
    * Checked before the first pair as well as at every comparison boundary: a
    * document with a single lane has no pairs to iterate, and a budget that had
    * already expired must not reach the end of the run reporting a pass.
@@ -439,13 +458,10 @@ export async function checkParallelWork(options = {}) {
         }
       }
       if (unresolved) {
-        pairsUnresolved += 1
-        add('overlap-unresolved', {
-          file: documentName,
-          pointer: `${left.pointer}/owns`,
-          message: `whether lane "${sanitize(left.id, 80)}" and lane "${sanitize(right.id, 80)}" overlap was not determined: the intersection search reached the maxProductStates limit of ${globBudget}`,
-          suggestion: 'Simplify the patterns, or raise --max-product-states deliberately. An undetermined pair is not a disjoint pair.',
-        })
+        addUnresolved(
+          `${left.pointer}/owns`,
+          `whether lane "${sanitize(left.id, 80)}" and lane "${sanitize(right.id, 80)}" overlap was not determined: the intersection search reached the maxProductStates limit of ${globBudget}`,
+        )
         continue
       }
       pairsCompared += 1
@@ -501,11 +517,23 @@ export async function checkParallelWork(options = {}) {
   if (!budgetExpired && !limitReached) {
     for (const artifact of shared) {
       const changers = []
+      let changersUndetermined = false
       for (const lane of prepared) {
-        const touched = lane.changes.find((change) => {
+        let touched
+        for (const change of lane.changes) {
           const hit = matchesPath(artifact.segments, change.segments, globBudget)
-          return hit.resolved && hit.matched
-        })
+          if (!hit.resolved) {
+            if (!changersUndetermined) {
+              changersUndetermined = true
+              addUnresolved(
+                artifact.pointer,
+                `whether every lane's changes touch the shared artifact "${sanitize(artifact.source, 80)}" was not determined: the search reached the maxProductStates limit of ${globBudget}`,
+              )
+            }
+            continue
+          }
+          if (hit.matched) { touched = change; break }
+        }
         if (touched !== undefined) changers.push({ lane, change: touched })
       }
       changers.sort((left, right) => byCodeUnit(left.lane.id, right.lane.id))
@@ -530,17 +558,33 @@ export async function checkParallelWork(options = {}) {
 
       for (const lane of prepared) {
         if (ownerLane !== null && lane.id === ownerLane.id) continue
+        let claimed = null
+        let undetermined = null
         for (const own of lane.owns) {
           const result = intersectPatterns(artifact.segments, own.segments, globBudget)
-          if (!result.resolved || result.witness === null) continue
+          if (!result.resolved) {
+            if (undetermined === null) undetermined = own
+            continue
+          }
+          if (result.witness === null) continue
+          claimed = { own, witness: result.witness }
+          break
+        }
+        if (claimed !== null) {
           add('shared-artifact-claimed-by-lane', {
-            file: result.witness,
-            pointer: own.pointer,
+            file: claimed.witness,
+            pointer: claimed.own.pointer,
             message: `lane "${sanitize(lane.id, 80)}" claims ownership of a declared shared artifact; a generated file belongs to the integration owner, not to a lane`,
-            evidence: `${sanitize(own.source, 60)} vs ${sanitize(artifact.source, 60)}`,
+            evidence: `${sanitize(claimed.own.source, 60)} vs ${sanitize(artifact.source, 60)}`,
             suggestion: 'Remove the shared artifact from this lane’s owned paths.',
           })
-          break
+          continue
+        }
+        if (undetermined !== null) {
+          addUnresolved(
+            undetermined.pointer,
+            `whether lane "${sanitize(lane.id, 80)}" claims the shared artifact "${sanitize(artifact.source, 80)}" was not determined: the intersection search reached the maxProductStates limit of ${globBudget}`,
+          )
         }
       }
     }
@@ -553,12 +597,10 @@ export async function checkParallelWork(options = {}) {
       for (const change of lane.changes) {
         const inShared = sharedMatch(change.segments)
         if (!inShared.resolved) {
-          pairsUnresolved += 1
-          add('overlap-unresolved', {
-            file: documentName,
-            pointer: change.pointer,
-            message: `whether "${sanitize(change.path, 80)}" is a declared shared artifact was not determined: the search reached the maxProductStates limit of ${globBudget}`,
-          })
+          addUnresolved(
+            change.pointer,
+            `whether "${sanitize(change.path, 80)}" is a declared shared artifact was not determined: the search reached the maxProductStates limit of ${globBudget}`,
+          )
           continue
         }
         if (inShared.artifact === null && LOCKFILES.has(basename(change.path))) {
@@ -569,12 +611,34 @@ export async function checkParallelWork(options = {}) {
         if (inShared.artifact !== null) continue
 
         const claimants = []
+        let undetermined = false
         for (const other of prepared) {
           if (other === lane) continue
           for (const own of other.owns) {
             const hit = matchesPath(own.segments, change.segments, globBudget)
-            if (hit.resolved && hit.matched) { claimants.push(other.id); break }
+            if (!hit.resolved) { undetermined = true; continue }
+            if (hit.matched) { claimants.push(other.id); break }
           }
+        }
+        /**
+         * Self-ownership is only asked when no other lane claims the path, so
+         * the scan stays lazy -- but its undetermined answers count exactly as
+         * the others do. "No lane declares ownership of this path" is a claim
+         * about every lane, and a search that stopped cannot support it.
+         */
+        let ownSelf = false
+        if (claimants.length === 0) {
+          for (const own of lane.owns) {
+            const hit = matchesPath(own.segments, change.segments, globBudget)
+            if (!hit.resolved) { undetermined = true; continue }
+            if (hit.matched) { ownSelf = true; break }
+          }
+        }
+        if (undetermined) {
+          addUnresolved(
+            change.pointer,
+            `whether "${sanitize(change.path, 80)}" is inside any lane's declared ownership was not determined: the search reached the maxProductStates limit of ${globBudget}`,
+          )
         }
         if (claimants.length > 0) {
           claimants.sort(byCodeUnit)
@@ -586,11 +650,7 @@ export async function checkParallelWork(options = {}) {
           })
           continue
         }
-        const ownSelf = lane.owns.some((own) => {
-          const hit = matchesPath(own.segments, change.segments, globBudget)
-          return hit.resolved && hit.matched
-        })
-        if (!ownSelf) {
+        if (!ownSelf && !undetermined) {
           add('change-outside-declared-ownership', {
             file: change.path,
             pointer: change.pointer,

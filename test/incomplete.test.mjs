@@ -149,3 +149,116 @@ test('an incomplete report is still valid JSON on stdout, per the exit-2 contrac
   assert.equal(report.tool, 'parallel-work-conflict-checker')
   assert.equal(report.status, 'incomplete')
 })
+
+/**
+ * The four scans that reach past the lane-pair loop.
+ *
+ * Each of them asked the bounded intersection engine a question and each of
+ * them used to read "I did not finish" as "no". One fixture per scan, because a
+ * single document would let one surviving guard cover for three removed ones,
+ * and every one of them is reachable at the DEFAULT limits: the patterns below
+ * carry no flags at all.
+ *
+ * `COSTLY` is a 151-character single-segment pattern and `EXPENSIVE_PATH` a
+ * 190-character path. Their product exhausts the default 20000-state budget,
+ * and each test runs the same document again with room to finish, so what the
+ * bounded run declined to say is shown to have been a real finding rather than
+ * a harmless one.
+ */
+const COSTLY = `${'a?*'.repeat(50)}X`
+const EXPENSIVE_PATH = `${'a'.repeat(189)}X`
+const ROOMY = ['--max-product-states', '1000000']
+
+test('an undetermined shared-artifact claim is not an unclaimed artifact', async (t) => {
+  const root = await makeTree({
+    'lanes.json': lanesDocument([{ id: 'solo', owns: [COSTLY] }], { sharedArtifacts: [COSTLY] }),
+  })
+  t.after(() => cleanup(root))
+
+  const bounded = runReport(root)
+  assert.equal(bounded.report.status, 'incomplete')
+  assert.equal(bounded.status, 2)
+  assert.equal(bounded.report.mergeOrder, null)
+  assert.deepEqual(findingsFor(bounded.report, 'shared-artifact-claimed-by-lane'), [])
+  const undetermined = findingsFor(bounded.report, 'overlap-unresolved')
+  assert.equal(undetermined.length, 1)
+  assert.equal(undetermined[0].location.pointer, '/lanes/0/owns/0')
+  assert.match(undetermined[0].message, /claims the shared artifact/)
+
+  const roomy = runReport(root, ROOMY)
+  assert.equal(roomy.status, 1)
+  assert.equal(findingsFor(roomy.report, 'shared-artifact-claimed-by-lane').length, 1)
+})
+
+test('an undetermined change against a shared artifact is not an untouched artifact', async (t) => {
+  const root = await makeTree({
+    'lanes.json': lanesDocument(
+      [
+        { id: 'a', owns: ['zzz/a/**'], changes: [EXPENSIVE_PATH] },
+        { id: 'b', owns: ['zzz/b/**'], changes: [EXPENSIVE_PATH] },
+      ],
+      { sharedArtifacts: [COSTLY] },
+    ),
+  })
+  t.after(() => cleanup(root))
+
+  const bounded = runReport(root)
+  assert.equal(bounded.report.status, 'incomplete')
+  assert.equal(bounded.status, 2)
+  assert.deepEqual(findingsFor(bounded.report, 'shared-artifact-unowned'), [])
+  const onTheArtifact = findingsFor(bounded.report, 'overlap-unresolved')
+    .filter((finding) => finding.location.pointer === '/sharedArtifacts/0')
+  assert.equal(onTheArtifact.length, 1)
+  assert.match(onTheArtifact[0].message, /changes touch the shared artifact/)
+
+  // Both lanes really do regenerate it, and no integration owner is declared.
+  const roomy = runReport(root, ROOMY)
+  assert.equal(roomy.status, 1)
+  assert.equal(findingsFor(roomy.report, 'shared-artifact-unowned').length, 1)
+})
+
+test('an undetermined match against another lane is not an absent claim', async (t) => {
+  const root = await makeTree({
+    'lanes.json': lanesDocument([
+      { id: 'a', owns: ['src/a/**'], changes: [EXPENSIVE_PATH] },
+      { id: 'b', owns: [COSTLY] },
+    ]),
+  })
+  t.after(() => cleanup(root))
+
+  const bounded = runReport(root)
+  assert.equal(bounded.report.status, 'incomplete')
+  assert.equal(bounded.status, 2)
+  assert.deepEqual(findingsFor(bounded.report, 'change-claimed-by-other-lane'), [])
+  assert.deepEqual(findingsFor(bounded.report, 'change-outside-declared-ownership'), [])
+  const undetermined = findingsFor(bounded.report, 'overlap-unresolved')
+  assert.equal(undetermined.length, 1)
+  assert.equal(undetermined[0].location.pointer, '/lanes/0/changes/0')
+  assert.match(undetermined[0].message, /inside any lane's declared ownership/)
+
+  // Lane "b" does own that path, so the bounded run was one state short of an error.
+  const roomy = runReport(root, ROOMY)
+  assert.equal(roomy.status, 1)
+  assert.equal(findingsFor(roomy.report, 'change-claimed-by-other-lane').length, 1)
+})
+
+test('an undetermined match against a lane’s own patterns is not a path outside ownership', async (t) => {
+  const root = await makeTree({
+    'lanes.json': lanesDocument([{ id: 'solo', owns: [COSTLY], changes: [EXPENSIVE_PATH] }]),
+  })
+  t.after(() => cleanup(root))
+
+  const bounded = runReport(root)
+  assert.equal(bounded.report.status, 'incomplete')
+  assert.equal(bounded.status, 2)
+  // The claim it must not make: "no lane declares ownership of this path".
+  assert.deepEqual(findingsFor(bounded.report, 'change-outside-declared-ownership'), [])
+  const undetermined = findingsFor(bounded.report, 'overlap-unresolved')
+  assert.equal(undetermined.length, 1)
+  assert.equal(undetermined[0].location.pointer, '/lanes/0/changes/0')
+
+  // The lane does own it: the warning the bounded run would have emitted is false.
+  const roomy = runReport(root, ROOMY)
+  assert.equal(roomy.status, 0)
+  assert.deepEqual(findingsFor(roomy.report, 'change-outside-declared-ownership'), [])
+})
