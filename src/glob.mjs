@@ -65,8 +65,21 @@ const UNSUPPORTED = [
  * contain `/`. Nested braces expand recursively. The result is capped: a pattern
  * whose expansion would exceed the cap is refused rather than expanded part of
  * the way, because a partly expanded pattern covers less than it says it does.
+ *
+ * The character limit is enforced HERE as well as in `compilePattern`, and the
+ * order is the whole point: this function recurses once per brace group, so a
+ * pattern long enough to carry thousands of them overflowed the stack before
+ * the limit that was supposed to refuse it was ever consulted. That is not a
+ * bounded refusal -- it is a `RangeError` out of the process, exit 2 with empty
+ * stdout, and no finding naming any limit. A refused pattern must cost a
+ * finding, never the report. Each recursion removes at least four characters
+ * (`{a,b}` becomes one alternative), so a pattern inside the limit can nest no
+ * more than a quarter of its length deep.
  */
-export function expandBraces(pattern, limit = GLOB_LIMITS.maxBraceExpansions) {
+export function expandBraces(pattern, limit = GLOB_LIMITS.maxBraceExpansions, maxChars = GLOB_LIMITS.maxPatternChars) {
+  if (typeof pattern !== 'string' || pattern.length === 0) return { ok: false, why: 'a pattern must be a non-empty string' }
+  if (pattern.length > maxChars) return { ok: false, why: `a pattern may be at most ${maxChars} characters` }
+
   const open = pattern.indexOf('{')
   if (open === -1) return { ok: true, patterns: [pattern] }
 
@@ -96,7 +109,7 @@ export function expandBraces(pattern, limit = GLOB_LIMITS.maxBraceExpansions) {
   const suffix = pattern.slice(close + 1)
   const out = []
   for (const alternative of alternatives) {
-    const expanded = expandBraces(`${prefix}${alternative}${suffix}`, limit)
+    const expanded = expandBraces(`${prefix}${alternative}${suffix}`, limit, maxChars)
     if (!expanded.ok) return expanded
     for (const candidate of expanded.patterns) {
       if (out.length >= limit) return { ok: false, why: `the brace expansion exceeds ${limit} alternatives` }

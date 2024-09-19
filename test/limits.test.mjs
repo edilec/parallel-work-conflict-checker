@@ -114,6 +114,22 @@ test('maxBraceExpansions: a pattern that expands past the limit is refused, not 
   assert.match(findingFor(over.report, 'glob-syntax-unsupported').message, /exceeds 2 alternatives/)
 })
 
+test('maxPatternChars: an over-long brace pattern is a finding, not a crashed process', async (t) => {
+  // 24 KB, 2.3% of maxDocumentBytes: a legal document by every declared bound
+  // except the one that refuses the pattern itself.
+  const owns = Array.from({ length: 4000 }, () => '{a,b}').join('/')
+  const root = await makeTree({ 'lanes.json': lanesDocument([lane('a', [owns]), lane('b', ['z/**'])]) })
+  t.after(() => cleanup(root))
+
+  const over = runReport(root)
+  assert.equal(over.status, 2)
+  // Exit 2 with EMPTY stdout is the shape reserved for a configuration error.
+  // This run had a subject, so it owes a report saying which input it refused.
+  assert.notEqual(over.stdout, '')
+  assert.equal(over.report.status, 'incomplete')
+  assert.match(findingFor(over.report, 'glob-syntax-unsupported').message, /at most 200 characters/)
+})
+
 test('timeoutMs: the budget is enforced against an injected clock, not a real one', async (t) => {
   const root = await makeTree({
     'lanes.json': lanesDocument([lane('a', ['src/a/**']), lane('b', ['src/b/**'])]),

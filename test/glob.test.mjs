@@ -146,6 +146,22 @@ test('the witness is the shortest one, so it is a function of the patterns alone
   assert.deepEqual([...seen], ['src/.mjs'])
 })
 
+test('a pattern too long to be one is refused before expansion, not after it', () => {
+  // Expansion recurses once per brace group, so a pattern carrying thousands of
+  // them overflows the stack if it reaches expansion at all -- and a stack
+  // overflow is not a refusal: it is exit 2 with no report and no limit named.
+  const huge = Array.from({ length: 4000 }, () => '{a,b}').join('/')
+  const refused = expandBraces(huge)
+  assert.equal(refused.ok, false)
+  assert.match(refused.why, /at most 200 characters/)
+
+  // The bound is a parameter rather than a constant, and it is the same bound
+  // compilePattern applies, so the two cannot drift apart.
+  assert.equal(expandBraces('src/{a,b}/**', 64, 4).ok, false)
+  assert.equal(expandBraces('src/{a,b}/**', 64, 200).ok, true)
+  assert.equal(expandBraces('').ok, false)
+})
+
 test('a pattern longer than the limit, or with too many segments, is refused', () => {
   assert.equal(compilePattern('a'.repeat(201)).ok, false)
   assert.equal(compilePattern(Array.from({ length: 33 }, () => 'a').join('/')).ok, false)
