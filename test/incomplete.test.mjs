@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { checkParallelWork } from '../src/index.mjs'
-import { cleanup, fakeClock, findingFor, findingsFor, lanesDocument, makeTree, runReport } from './helpers.mjs'
+import { cleanup, fakeClock, findingFor, findingsFor, lanesDocument, makeTree, runReport, tickingClock } from './helpers.mjs'
 
 test('an intersection search that reaches its bound is undetermined, not disjoint', async (t) => {
   const files = {
@@ -261,4 +261,110 @@ test('an undetermined match against a lane’s own patterns is not a path outsid
   const roomy = runReport(root, ROOMY)
   assert.equal(roomy.status, 0)
   assert.deepEqual(findingsFor(roomy.report, 'change-outside-declared-ownership'), [])
+})
+
+/**
+ * The budget is documented as the budget for the whole run.
+ *
+ * Both fixtures below keep the lane-pair loop trivial and put the work in a
+ * later phase, and both assert `pairsCompared` is non-zero -- that is what says
+ * the expiry happened AFTER the pair loop finished, in the phase the test is
+ * named for, rather than at the first check of the run where any guard at all
+ * would catch it.
+ */
+test('the time budget stops the scan for which lanes change a shared artifact', async (t) => {
+  const root = await makeTree({
+    'lanes.json': lanesDocument(
+      [
+        { id: 'a', owns: ['src/a/**'], changes: ['gen/out/x.min.js'] },
+        { id: 'b', owns: ['src/b/**'], changes: ['gen/out/x.min.js'] },
+      ],
+      { sharedArtifacts: ['gen/**/*.min.js'] },
+    ),
+  })
+  t.after(() => cleanup(root))
+  const lanes = join(root, 'lanes.json')
+
+  // The clock charges a millisecond per reading, so the cheap phases finish and
+  // the budget runs out partway through the scan this test is named for.
+  const stopped = await checkParallelWork({ lanes, limits: { timeoutMs: 8 }, now: tickingClock(1_000_000, 1) })
+  assert.equal(stopped.status, 'incomplete')
+  assert.equal(stopped.mergeOrder, null)
+  assert.equal(stopped.summary.pairsCompared, 1, 'the lane pair was compared before the budget ran out')
+  assert.match(findingFor(stopped, 'time-budget-exceeded').message, /8ms time budget/)
+  // Both lanes do regenerate the artifact, and the scan only got as far as one.
+  assert.deepEqual(findingsFor(stopped, 'shared-artifact-unowned'), [])
+
+  const finished = await checkParallelWork({ lanes, limits: { timeoutMs: 8 }, now: tickingClock(1_000_000, 0) })
+  assert.equal(finished.status, 'fail')
+  assert.equal(findingsFor(finished, 'shared-artifact-unowned').length, 1)
+})
+
+test('the time budget stops the scan for a lane claiming a shared artifact', async (t) => {
+  const root = await makeTree({
+    'lanes.json': lanesDocument(
+      [{ id: 'a', owns: ['gen/**/*.min.js'] }, { id: 'b', owns: ['src/b/**'] }],
+      { sharedArtifacts: ['gen/**/*.min.js'] },
+    ),
+  })
+  t.after(() => cleanup(root))
+  const lanes = join(root, 'lanes.json')
+
+  const stopped = await checkParallelWork({ lanes, limits: { timeoutMs: 9 }, now: tickingClock(1_000_000, 1) })
+  assert.equal(stopped.status, 'incomplete')
+  assert.equal(stopped.summary.pairsCompared, 1, 'the lane pair was compared before the budget ran out')
+  assert.match(findingFor(stopped, 'time-budget-exceeded').message, /9ms time budget/)
+  assert.deepEqual(findingsFor(stopped, 'shared-artifact-claimed-by-lane'), [])
+
+  const finished = await checkParallelWork({ lanes, limits: { timeoutMs: 9 }, now: tickingClock(1_000_000, 0) })
+  assert.equal(finished.status, 'fail')
+  assert.equal(findingsFor(finished, 'shared-artifact-claimed-by-lane').length, 1)
+})
+
+test('the time budget stops pattern compilation, the phase before any comparison', async (t) => {
+  const owned = (prefix) => Array.from({ length: 10 }, (unused, index) => `src/${prefix}/${index}/**`)
+  const root = await makeTree({
+    'lanes.json': lanesDocument([{ id: 'a', owns: owned('a') }, { id: 'b', owns: owned('b') }]),
+  })
+  t.after(() => cleanup(root))
+  const lanes = join(root, 'lanes.json')
+
+  const stopped = await checkParallelWork({ lanes, limits: { timeoutMs: 5 }, now: tickingClock(1_000_000, 1) })
+  assert.equal(stopped.status, 'incomplete')
+  assert.equal(stopped.summary.pairsCompared, 0)
+  // Compilation stopped where the budget ran out rather than running to the end
+  // of a document whose comparison could never be afforded anyway.
+  assert.ok(stopped.summary.patterns < 20, `compiled ${stopped.summary.patterns} of 20 patterns`)
+  assert.match(findingFor(stopped, 'time-budget-exceeded').message, /5ms time budget/)
+
+  const finished = await checkParallelWork({ lanes, limits: { timeoutMs: 5 }, now: tickingClock(1_000_000, 0) })
+  assert.equal(finished.status, 'pass')
+  assert.equal(finished.summary.patterns, 20)
+})
+
+test('the time budget stops the change-set scan, not only the lane pairs', async (t) => {
+  const changes = (prefix) => [
+    'package-lock.json',
+    ...Array.from({ length: 200 }, (unused, index) => `src/${prefix}/f${index}.mjs`),
+  ]
+  const root = await makeTree({
+    'lanes.json': lanesDocument([
+      { id: 'a', owns: ['src/a/**'], changes: changes('a') },
+      { id: 'b', owns: ['src/b/**'], changes: changes('b') },
+    ]),
+  })
+  t.after(() => cleanup(root))
+  const lanes = join(root, 'lanes.json')
+
+  const stopped = await checkParallelWork({
+    lanes, limits: { timeoutMs: 100 }, now: tickingClock(1_000_000, 1),
+  })
+  assert.equal(stopped.status, 'incomplete')
+  assert.ok(stopped.summary.pairsCompared > 0, 'the lane pair was compared before the budget ran out')
+  assert.match(findingFor(stopped, 'time-budget-exceeded').message, /100ms time budget/)
+  assert.deepEqual(findingsFor(stopped, 'lockfile-shared-undeclared'), [])
+
+  const finished = await checkParallelWork({ lanes, limits: { timeoutMs: 100 }, now: tickingClock(1_000_000, 0) })
+  assert.equal(finished.status, 'fail')
+  assert.equal(findingsFor(finished, 'lockfile-shared-undeclared').length, 1)
 })

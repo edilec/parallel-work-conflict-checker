@@ -306,10 +306,20 @@ export async function checkParallelWork(options = {}) {
   }
 
   // ---- compile every pattern -------------------------------------------------
+  /**
+   * `budgetExpired` is declared here rather than beside the comparison loops
+   * because compilation is part of the run the budget is documented to bound.
+   * A document that spends the whole budget expanding patterns has not earned
+   * a verdict about lanes it never compared.
+   */
+  let budgetExpired = false
+  let limitReached = false
+
   const globBudget = limits.maxProductStates
   const compileList = (entries, owner) => {
     const compiled = []
     for (const entry of entries) {
+      if (expired()) { budgetExpired = true; return compiled }
       const expanded = expandBraces(entry.value, limits.maxBraceExpansions)
       if (!expanded.ok) {
         add('glob-syntax-unsupported', {
@@ -406,8 +416,6 @@ export async function checkParallelWork(options = {}) {
   let comparisons = 0
   let pairsCompared = 0
   let pairsUnresolved = 0
-  let budgetExpired = false
-  let limitReached = false
 
   /**
    * Record an intersection the bounded search did not decide.
@@ -485,14 +493,6 @@ export async function checkParallelWork(options = {}) {
       suggestion: 'Reduce the number of patterns, or raise --max-comparisons deliberately.',
     })
   }
-  if (budgetExpired) {
-    add('time-budget-exceeded', {
-      file: documentName,
-      pointer: '/lanes',
-      message: `the ${limits.timeoutMs}ms time budget expired before every lane pair was compared, so the remaining pairs were not examined`,
-      suggestion: 'Raise --timeout-ms deliberately. An unexamined pair is not a disjoint pair.',
-    })
-  }
 
   // ---- shared artifacts ------------------------------------------------------
   const ownerLane = integrationOwner === null ? null : seenIds.get(integrationOwner) ?? null
@@ -515,10 +515,12 @@ export async function checkParallelWork(options = {}) {
   }
 
   if (!budgetExpired && !limitReached) {
+    sharedScan:
     for (const artifact of shared) {
       const changers = []
       let changersUndetermined = false
       for (const lane of prepared) {
+        if (expired()) { budgetExpired = true; break sharedScan }
         let touched
         for (const change of lane.changes) {
           const hit = matchesPath(artifact.segments, change.segments, globBudget)
@@ -557,6 +559,7 @@ export async function checkParallelWork(options = {}) {
       }
 
       for (const lane of prepared) {
+        if (expired()) { budgetExpired = true; break sharedScan }
         if (ownerLane !== null && lane.id === ownerLane.id) continue
         let claimed = null
         let undetermined = null
@@ -593,8 +596,10 @@ export async function checkParallelWork(options = {}) {
   // ---- change sets -----------------------------------------------------------
   if (!budgetExpired && !limitReached) {
     const lockGroups = new Map()
+    changeScan:
     for (const lane of prepared) {
       for (const change of lane.changes) {
+        if (expired()) { budgetExpired = true; break changeScan }
         const inShared = sharedMatch(change.segments)
         if (!inShared.resolved) {
           addUnresolved(
@@ -672,6 +677,21 @@ export async function checkParallelWork(options = {}) {
         suggestion: 'Add the lockfile to "sharedArtifacts" and declare an "integrationOwner".',
       })
     }
+  }
+
+  /**
+   * Emitted here, after every phase the budget bounds, rather than beside the
+   * lane-pair loop where it used to live. The budget is documented as the
+   * budget for the WHOLE run, and a finding raised before two of the three
+   * analysis phases had even started could only ever describe the first one.
+   */
+  if (budgetExpired) {
+    add('time-budget-exceeded', {
+      file: documentName,
+      pointer: '/lanes',
+      message: `the ${limits.timeoutMs}ms time budget expired before the comparison finished, so the remaining patterns, artifacts and changed paths were not examined`,
+      suggestion: 'Raise --timeout-ms deliberately. An unexamined pair is not a disjoint pair.',
+    })
   }
 
   // ---- dependency order ------------------------------------------------------

@@ -65,6 +65,23 @@ export function findingFor(report, ruleId) {
   return matches[0]
 }
 
+/**
+ * A clock that charges `step` milliseconds for every reading after the first.
+ *
+ * `fakeClock` expires the budget at the first check, which can only ever
+ * exercise the earliest guard in the run. This one lets the cheap phases finish
+ * and expires in whichever phase does enough work, which is what a real clock
+ * does and what a budget for "the whole run" has to survive.
+ */
+export function tickingClock(start, step) {
+  let readings = 0
+  return () => {
+    const at = start + (readings * step)
+    readings += 1
+    return at
+  }
+}
+
 /** A clock that reports `steps` milliseconds elapsed on every call after the first. */
 export function fakeClock(start, jump) {
   let first = true
