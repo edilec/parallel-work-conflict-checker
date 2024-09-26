@@ -167,7 +167,16 @@ export function compilePattern(pattern, limits = GLOB_LIMITS) {
   return { ok: true, segments }
 }
 
-/** Compile a concrete path into all-literal segments, so one engine serves matching too. */
+/**
+ * Compile a concrete path into all-literal segments, so one engine serves
+ * matching too.
+ *
+ * The normalised spelling comes back with the segments, because a caller that
+ * reconstructs it separately from the raw string gets a second answer to the
+ * question "which file is this?". Two lanes contending for one lockfile, one of
+ * them spelling it "./package-lock.json", were grouped apart by exactly that
+ * second answer and the contention went unreported.
+ */
 export function compileLiteralPath(path, limits = GLOB_LIMITS) {
   if (typeof path !== 'string' || path.length === 0) return { ok: false, why: 'a path must be a non-empty string' }
   if (path.length > limits.maxPatternChars) {
@@ -186,7 +195,7 @@ export function compileLiteralPath(path, limits = GLOB_LIMITS) {
     if (raw === '.' || raw === '..') return { ok: false, why: `a "${raw}" segment is not supported; write the path from the repository root` }
     segments.push({ kind: 'pattern', tokens: [...raw].map((character) => ({ kind: 'literal', character })) })
   }
-  return { ok: true, segments }
+  return { ok: true, segments, path: rawSegments.join('/') }
 }
 
 /** The one character both token lists accept at these positions, or null. */

@@ -191,6 +191,30 @@ test('3d. an undeclared dependency lockfile changed by two lanes is caught by na
   assert.equal(finding.evidence, 'api, web')
 })
 
+test('3d-bis. one lockfile spelled two ways is one lockfile', async (t) => {
+  // The README says a leading "./" is stripped. Every comparison in this tool
+  // is made on the compiled path, so a rule that grouped by the declared string
+  // asked a different question: these two lanes contend for one file, and
+  // spelling it differently used to split them into two groups of one and turn
+  // the error into a green run.
+  const lanes = (second) => lanesDocument([
+    { id: 'api', owns: ['src/api/**'], changes: ['src/api/x.mjs', 'package-lock.json'] },
+    { id: 'web', owns: ['src/web/**'], changes: ['src/web/y.mjs', second] },
+  ])
+  const plain = await makeTree({ 'lanes.json': lanes('package-lock.json') })
+  const dotted = await makeTree({ 'lanes.json': lanes('./package-lock.json') })
+  t.after(() => cleanup(plain))
+  t.after(() => cleanup(dotted))
+
+  const withDot = runReport(dotted)
+  assert.equal(withDot.status, 1)
+  assert.equal(findingFor(withDot.report, 'lockfile-shared-undeclared').location.file, 'package-lock.json')
+  assert.equal(findingFor(withDot.report, 'lockfile-shared-undeclared').evidence, 'api, web')
+
+  // Not merely "also fails": the same situation produces the same report.
+  assert.equal(withDot.stdout, runReport(plain).stdout)
+})
+
 test('3e. a lane other than the integration owner may not claim a shared artifact', async (t) => {
   const root = await makeTree({
     'lanes.json': lanesDocument(

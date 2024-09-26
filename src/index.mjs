@@ -404,7 +404,14 @@ export async function checkParallelWork(options = {}) {
         })
         continue
       }
-      changes.push({ path: entry.value, pointer: entry.pointer, segments: compiled.segments })
+      /**
+       * The compiled spelling, not the declared one. Every comparison in this
+       * tool is made on the compiled form, and a rule that groups by the raw
+       * string asks a different question from the rest: two lanes regenerating
+       * one lockfile, one of them writing "./package-lock.json", landed in two
+       * groups of one and the contention disappeared.
+       */
+      changes.push({ path: compiled.path, pointer: entry.pointer, segments: compiled.segments })
     }
 
     patternCount += owns.length

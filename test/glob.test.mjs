@@ -122,6 +122,23 @@ test('syntax this engine does not implement is refused, never approximated', () 
   }
 })
 
+test('a leading "./" is stripped from a pattern, exactly as it is from a path', () => {
+  // Not cosmetic: without the strip the pattern carries a "." segment, which
+  // this engine refuses outright, so the lane stops being compared at all and
+  // the run reports incomplete instead of the overlap that is really there.
+  const dotted = compilePattern('./src/**')
+  assert.equal(dotted.ok, true, dotted.why)
+  assert.deepEqual(dotted.segments, compile('src/**'))
+  assertOverlap('./src/**', 'src/api/**', 'src/api')
+
+  // The same normalisation on the path side, which is what makes a declared
+  // change and a declared pattern agree about which file they name.
+  const path = compileLiteralPath('./src/app.mjs')
+  assert.equal(path.ok, true, path.why)
+  assert.equal(path.path, 'src/app.mjs')
+  assert.deepEqual(matchesPath(dotted.segments, path.segments), { resolved: true, matched: true })
+})
+
 test('a concrete path is validated as strictly as a pattern', () => {
   assert.equal(compileLiteralPath('src/app.mjs').ok, true)
   assert.equal(compileLiteralPath('./src/app.mjs').ok, true)
