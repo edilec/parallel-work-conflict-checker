@@ -21,7 +21,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { RULE_SEVERITY } from '../src/index.mjs'
-import { cleanup, findingFor, lanesDocument, makeTree, runReport } from './helpers.mjs'
+import { cleanup, findingFor, findingsFor, lanesDocument, makeTree, runReport } from './helpers.mjs'
 
 const covered = new Set()
 
@@ -67,10 +67,31 @@ test('dependency-cycle is an error: the run fails and exits 1', async (t) => {
     { id: 'a', owns: ['src/a/**'], dependsOn: ['b'] },
     { id: 'b', owns: ['src/b/**'], dependsOn: ['a'] },
   ]))
-  assert.equal(findingFor(report, 'dependency-cycle').severity, 'error')
+  const cycle = findingFor(report, 'dependency-cycle')
+  assert.equal(cycle.severity, 'error')
   assert.equal(report.status, 'fail')
   assert.equal(status, 1)
   assert.equal(report.mergeOrder, null)
+  // The finding names the lanes it could not order, and there are some.
+  assert.match(cycle.message, /no merge order exists for 2 lane\(s\)/)
+  assert.equal(cycle.evidence, 'a, b')
+})
+
+test('a repeated lane id withdraws the merge order without inventing a cycle', async (t) => {
+  // Edges and indegrees are keyed by lane id, so two lanes sharing one used to
+  // collapse into a single node and be reported as a dependsOn cycle -- on a
+  // document carrying no dependsOn key at all, "for 0 lane(s)", with an empty
+  // evidence list. The ambiguity is real and the merge order is still
+  // withdrawn; the explanation was the part that was false.
+  const { report, status } = await exercise(t, 'duplicate-lane-id', doc([
+    { id: 'a', owns: ['src/a/**'] },
+    { id: 'a', owns: ['src/b/**'] },
+  ]))
+  assert.equal(status, 1)
+  assert.equal(report.status, 'fail')
+  assert.equal(report.mergeOrder, null)
+  assert.deepEqual(findingsFor(report, 'dependency-cycle'), [])
+  assert.match(findingFor(report, 'duplicate-lane-id').message, /declared more than once/)
 })
 
 test('dependency-self is an error: the run fails and exits 1', async (t) => {

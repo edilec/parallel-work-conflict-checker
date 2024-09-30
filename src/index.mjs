@@ -353,10 +353,12 @@ export async function checkParallelWork(options = {}) {
 
   const seenIds = new Map()
   const prepared = []
+  let duplicateLaneIds = false
   let patternCount = 0
   let changeCount = 0
   for (const lane of lanes) {
     if (seenIds.has(lane.id)) {
+      duplicateLaneIds = true
       add('duplicate-lane-id', {
         file: documentName,
         pointer: `${lane.pointer}/id`,
@@ -703,7 +705,19 @@ export async function checkParallelWork(options = {}) {
 
   // ---- dependency order ------------------------------------------------------
   const edges = new Map(prepared.map((lane) => [lane.id, []]))
-  let dependenciesUsable = true
+  /**
+   * A repeated lane id is not a graph this sort can speak about.
+   *
+   * Edges and indegrees are keyed by id, so two lanes sharing one collapse into
+   * a single node and the ordered list comes out shorter than the lane list --
+   * which the cycle branch below reads as a cycle. On a document with no
+   * `dependsOn` key at all that produced "the dependsOn graph has a cycle, so
+   * no merge order exists for 0 lane(s)" with an empty evidence list: a finding
+   * that refutes itself on its face. The merge order is still withdrawn,
+   * because ambiguous ids cannot be sequenced, and `duplicate-lane-id` already
+   * says exactly why.
+   */
+  let dependenciesUsable = !duplicateLaneIds
   for (const lane of prepared) {
     for (const entry of lane.dependsOn) {
       if (entry.value === lane.id) {
