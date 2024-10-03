@@ -187,6 +187,26 @@ test('lanes-schema-invalid is an error that makes the run incomplete and exits 2
   assert.equal(status, 2)
 })
 
+test('a one-character typo inside a lane is refused, not ignored', async (t) => {
+  // The document-level half of this guarantee is exercised above with
+  // "sharedArtefacts". This is the other half: an unknown key on a LANE. Both
+  // matter for the same reason -- "dependsOnn" silently ignored is a merge
+  // order computed from a graph the author did not write.
+  const { report, status } = await exercise(t, 'lanes-schema-invalid', {
+    'lanes.json': JSON.stringify({
+      schemaVersion: '1',
+      lanes: [{ id: 'a', owns: ['src/a/**'], dependsOnn: ['b'] }, { id: 'b', owns: ['src/b/**'] }],
+    }),
+  })
+  const problem = findingFor(report, 'lanes-schema-invalid')
+  assert.equal(problem.severity, 'error')
+  assert.equal(problem.location.pointer, '/lanes/0/dependsOnn')
+  assert.match(problem.message, /unknown lane key/)
+  assert.equal(report.status, 'incomplete')
+  assert.equal(status, 2)
+  assert.equal(report.mergeOrder, null)
+})
+
 test('lanes-unreadable is an error that makes the run incomplete and exits 2', async (t) => {
   const { report, status } = await exercise(t, 'lanes-unreadable', { 'other.json': '{}' })
   assert.equal(findingFor(report, 'lanes-unreadable').severity, 'error')

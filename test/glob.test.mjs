@@ -154,8 +154,56 @@ test('a search that reaches its bound reports "not resolved", never "disjoint"',
   assert.deepEqual(intersectPatterns(left, right, 20000), { resolved: true, witness: 'a/x/y/z/b/c/d/w/e' })
 })
 
+/**
+ * Every path one step shorter than this one: a segment dropped, or a character
+ * dropped from a segment. If a witness were not the shortest, at least one of
+ * these would still be matched by both patterns.
+ */
+function shortenings(witness) {
+  const segments = witness.split('/')
+  const out = []
+  for (let index = 0; index < segments.length; index += 1) {
+    const without = [...segments.slice(0, index), ...segments.slice(index + 1)]
+    if (without.length > 0) out.push(without.join('/'))
+    for (let position = 0; position < segments[index].length; position += 1) {
+      const shorter = segments[index].slice(0, position) + segments[index].slice(position + 1)
+      if (shorter.length === 0) continue
+      out.push([...segments.slice(0, index), shorter, ...segments.slice(index + 1)].join('/'))
+    }
+  }
+  return [...new Set(out)]
+}
+
 test('the witness is the shortest one, so it is a function of the patterns alone', () => {
-  // Run the same intersection repeatedly: nothing about it may vary.
+  // Shortest, asserted rather than asserted-about: for each pair, no path made
+  // by dropping a segment or a character from the witness is matched by both
+  // patterns. Six pairs, because a single hard-coded value is a claim about one
+  // answer and not about the rule that produced it.
+  for (const [left, right] of [
+    ['src/**', 'src/**/*.mjs'],
+    ['a/**/z', 'a/b/**/z'],
+    ['pkg?.json', 'pkg*.json'],
+    ['**', 'x/**'],
+    ['ab*cd', '*bxc*'],
+    ['packages/*/src/**', 'packages/core/**'],
+  ]) {
+    const result = intersect(left, right)
+    assert.equal(result.resolved, true)
+    assert.notEqual(result.witness, null, `${left} vs ${right} do overlap`)
+    for (const candidate of shortenings(result.witness)) {
+      const path = compileLiteralPath(candidate)
+      if (!path.ok) continue
+      const bothMatch = [left, right]
+        .every((pattern) => matchesPath(compile(pattern), path.segments).matched === true)
+      assert.equal(
+        bothMatch, false,
+        `"${candidate}" is shorter than the witness "${result.witness}" and matches both ${left} and ${right}`,
+      )
+    }
+  }
+
+  // A function of the patterns alone: the same pair, run repeatedly, answers
+  // the same thing every time.
   const seen = new Set()
   for (let attempt = 0; attempt < 5; attempt += 1) {
     seen.add(intersect('src/**', 'src/**/*.mjs').witness)
