@@ -72,6 +72,7 @@ export const RULE_SEVERITY = Object.freeze({
   'shared-artifact-claimed-by-lane': 'error',
   'shared-artifact-order-risk': 'warning',
   'shared-artifact-unowned': 'error',
+  'single-lane-declared': 'warning',
   'time-budget-exceeded': 'error',
 })
 
@@ -295,6 +296,24 @@ export async function checkParallelWork(options = {}) {
       suggestion: 'Declare at least two lanes, each with the paths it owns.',
     })
     return report('fail', findings, { ...EMPTY, mergeOrder: [] })
+  }
+  /**
+   * One lane is not a conflict check.
+   *
+   * The pair loop has nothing to iterate, so the run reaches the end with
+   * `pairsCompared: 0` and renders "PASS no lane conflict found" -- a green
+   * verdict on no comparison at all. It stays a pass, because one lane in
+   * flight is a legitimate state and failing it would make the tool unusable
+   * where it is most often run. What it may not do is keep quiet about having
+   * compared nothing.
+   */
+  if (lanes.length === 1) {
+    add('single-lane-declared', {
+      file: documentName,
+      pointer: '/lanes',
+      message: 'the document declares one lane, so no lane pair was compared and this run establishes nothing about conflicts between lanes',
+      suggestion: 'Declare every lane running in parallel, so this run has two lanes to compare.',
+    })
   }
   if (lanes.length > limits.maxLanes) {
     add('limit-exceeded', {

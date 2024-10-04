@@ -162,7 +162,8 @@ refused pattern makes the run **incomplete** and exits 2.
 | `shared-artifact-claimed-by-lane` | error | a lane other than the integration owner claims a shared artifact in `owns` |
 | `shared-artifact-order-risk` | warning | two or more lanes change a shared artifact that an integration owner does own |
 | `shared-artifact-unowned` | error | two or more lanes change a shared artifact and no `integrationOwner` is declared |
-| `time-budget-exceeded` | error | the time budget expired before every lane pair was compared |
+| `single-lane-declared` | warning | the document declares one lane, so no pair was compared and the pass says nothing about conflicts |
+| `time-budget-exceeded` | error | the time budget expired before the comparison finished |
 
 Nine of these mean the run did not obtain the evidence it needed, and force
 `status: "incomplete"` and exit 2 rather than exit 1: `change-path-invalid`,
@@ -182,7 +183,10 @@ the source — not by a test that reads a declaration and agrees with it.
    look" as "they do not overlap".
 2. **A generated file changed by two or more lanes needs one integration
    owner.** Without one that is an error and the run fails.
-3. **A pass is never vacuous.** A document declaring no lanes fails.
+3. **A pass is never vacuous.** A document declaring no lanes fails. A document
+   declaring exactly one lane passes — one lane in flight is a legitimate state —
+   but never silently: `single-lane-declared` says that no pair was compared, so
+   the exit 0 cannot be read as "these lanes do not collide".
 4. **Ordering is by UTF-16 code unit**, never by `localeCompare` or
    `Intl.Collator`, whose ICU data differs between Node builds. Findings sort by
    `(location.file, location.pointer, ruleId, message)`.

@@ -290,6 +290,31 @@ test('shared-artifact-unowned is an error: the run fails and exits 1', async (t)
   assert.equal(status, 1)
 })
 
+test('single-lane-declared is a warning: the run still passes and exits 0', async (t) => {
+  // A single-lane document has no pair to compare, so "PASS no lane conflict
+  // found" would otherwise be a green verdict on nothing at all. It stays a
+  // pass -- one lane in flight is a real state -- and it says what it did.
+  const { report, status } = await exercise(t, 'single-lane-declared', doc([
+    { id: 'solo', owns: ['src/**'] },
+  ]))
+  const finding = findingFor(report, 'single-lane-declared')
+  assert.equal(finding.severity, 'warning')
+  assert.equal(finding.location.pointer, '/lanes')
+  assert.match(finding.message, /no lane pair was compared/)
+  assert.equal(report.status, 'pass')
+  assert.equal(status, 0)
+  assert.equal(report.summary.pairsCompared, 0)
+
+  // Two lanes compare a pair, so the note is not emitted.
+  const compared = await exercise(t, 'single-lane-declared', doc([
+    { id: 'a', owns: ['src/a/**'] },
+    { id: 'b', owns: ['src/b/**'] },
+  ]))
+  assert.equal(compared.status, 0)
+  assert.deepEqual(findingsFor(compared.report, 'single-lane-declared'), [])
+  assert.equal(compared.report.summary.pairsCompared, 1)
+})
+
 test('time-budget-exceeded is an error that makes the run incomplete and exits 2', async (t) => {
   const { report, status } = await exercise(t, 'time-budget-exceeded', doc([
     { id: 'a', owns: ['src/a/**'] },
