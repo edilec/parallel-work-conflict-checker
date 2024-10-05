@@ -23,8 +23,9 @@
  *    literal.
  *
  * Both levels are searched breadth-first over the product state space, so the
- * witness is the shortest one and is therefore a deterministic function of the
- * two patterns. Every search is bounded; a search that reaches its bound returns
+ * witness is the shortest one -- fewest segments, and the shortest string in
+ * each of them -- and is therefore a deterministic function of the two
+ * patterns. Every search is bounded; a search that reaches its bound returns
  * `{ resolved: false }` and the caller must treat that as UNKNOWN. It is never
  * an answer of "disjoint".
  */
@@ -251,10 +252,14 @@ export function segmentWitness(tokensLeft, tokensRight, budget = GLOB_LIMITS.max
   let spent = 0
   segmentEpsilon(tokensLeft, tokensRight, [0, 0], seenKeys, frontier, '')
 
+  /**
+   * Acceptance is only ever checked on a frontier a character has been consumed
+   * into. The initial frontier carries the empty witness by construction, so a
+   * scan of it before the loop could never accept anything -- it was two lines
+   * that could not fire.
+   */
   const accepted = (entry) => entry.witness.length > 0
     && entry.state[0] === tokensLeft.length && entry.state[1] === tokensRight.length
-
-  for (const entry of frontier) if (accepted(entry)) return { resolved: true, witness: entry.witness }
 
   while (frontier.length > 0) {
     if (spent > budget) return { resolved: false }
@@ -315,10 +320,10 @@ export function intersectPatterns(left, right, budget = GLOB_LIMITS.maxProductSt
   let spent = 0
   pathEpsilon(left, right, [0, 0], seenKeys, frontier, [])
 
+  // As in `segmentWitness`: the initial frontier carries the empty witness, so
+  // there was nothing a pre-loop acceptance scan could ever accept.
   const accepted = (entry) => entry.witness.length > 0
     && entry.state[0] === left.length && entry.state[1] === right.length
-
-  for (const entry of frontier) if (accepted(entry)) return { resolved: true, witness: entry.witness.join('/') }
 
   while (frontier.length > 0) {
     if (spent > budget) return { resolved: false }

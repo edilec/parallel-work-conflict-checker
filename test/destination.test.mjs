@@ -20,10 +20,12 @@
  */
 
 import assert from 'node:assert/strict'
+import { constants } from 'node:fs'
 import { link, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import test from 'node:test'
 
+import { WRITE_NO_FOLLOW } from '../src/destination.mjs'
 import { cleanup, lanesDocument, makeTree, runCli } from './helpers.mjs'
 
 // A document that fails, so the written report has findings in it to compare.
@@ -156,4 +158,26 @@ test('the written report is byte-identical to the report on stdout', async (t) =
 
   assert.equal(result.status, 1)
   assert.equal(await readFile(destination, 'utf8'), result.stdout)
+})
+
+test('the open flag is the second, independent refusal of a link at the destination', async (t) => {
+  // assertWritableDestination refuses a link on sight; this is what closes the
+  // window between that check and the open. The claim was a comment on a
+  // constant until now: nothing failed when O_NOFOLLOW was taken out of it.
+  const root = await fixture(t)
+  const victim = join(root, 'precious.txt')
+  await writeFile(victim, 'keep me')
+  const planted = join(root, 'planted.json')
+  await symlink(victim, planted)
+
+  await assert.rejects(
+    writeFile(planted, 'through the link', { encoding: 'utf8', flag: WRITE_NO_FOLLOW }),
+    (error) => error.code === 'ELOOP' || error.code === 'EMLINK',
+  )
+  assert.equal(await readFile(victim, 'utf8'), 'keep me')
+
+  // Without the flag the same open follows the link and destroys the target,
+  // which is what makes the flag the thing doing the work.
+  await writeFile(planted, 'through the link', { encoding: 'utf8', flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC })
+  assert.equal(await readFile(victim, 'utf8'), 'through the link')
 })

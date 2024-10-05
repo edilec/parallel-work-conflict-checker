@@ -1,21 +1,10 @@
 #!/usr/bin/env node
 
-import { constants } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-import { assertWritableDestination } from '../src/destination.mjs'
+import { WRITE_NO_FOLLOW, assertWritableDestination } from '../src/destination.mjs'
 import { checkParallelWork, formatReport } from '../src/index.mjs'
-
-/**
- * Create or truncate, and refuse to follow a link at the last component.
- *
- * `assertWritableDestination` refuses a symbolic link on sight, before anything
- * is opened. This flag closes the window between that check and the open: a link
- * planted in between is an ELOOP from the kernel rather than a write through it.
- * Two independent checks, because one of them can be raced.
- */
-const WRITE_NO_FOLLOW = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW
 
 const HELP = `parallel-work-conflict-checker
 

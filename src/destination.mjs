@@ -1,5 +1,21 @@
+import { constants } from 'node:fs'
 import { lstat, realpath, stat } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
+
+/**
+ * Create or truncate, and refuse to follow a link at the last component.
+ *
+ * `assertWritableDestination` refuses a symbolic link on sight, before anything
+ * is opened. This flag closes the window between that check and the open: a
+ * link planted in between is an ELOOP from the kernel rather than a write
+ * through it. Two independent checks, because one of them can be raced.
+ *
+ * It lives here rather than in the CLI so that the claim in that sentence is
+ * testable: a test opens a link with this flag and watches the kernel refuse
+ * it, and opens the same link without it and watches the write go through.
+ * The flag was a constant nothing could fail on before.
+ */
+export const WRITE_NO_FOLLOW = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW
 
 /** Raised when a destination cannot be written to safely. The caller exits 2. */
 export class DestinationError extends Error {
