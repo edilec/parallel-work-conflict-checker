@@ -144,3 +144,30 @@ test('sanitize bounds the length and marks the truncation', () => {
   assert.equal(sanitize('  spaced   out  '), 'spaced out')
   assert.throws(() => sanitize('x', 0), TypeError)
 })
+
+test('a value that cannot be rendered is described by its shape, never reproduced', () => {
+  // JSON.parse produces this shape from {"toString": {}}: an own, non-callable
+  // toString shadows the prototype's, and String() throws "Cannot convert
+  // object to primitive value". Uncaught at this boundary that costs the whole
+  // report -- exit 2 with EMPTY stdout, the shape reserved for a configuration
+  // error, and one malformed document suppressing the findings for every other
+  // input in the same run.
+  const poison = JSON.parse('{"toString": {}, "apiKey": "AKIAIOSFODNN7EXAMPLE"}')
+  assert.throws(() => String(poison), /Cannot convert object to primitive value/)
+  assert.equal(sanitize(poison), '[object]')
+  // Described, not reproduced: the field next to it does not come along.
+  assert.equal(sanitize(poison).includes('AKIA'), false)
+
+  const poisonArray = JSON.parse('[{"toString": {}}]')
+  assert.throws(() => String(poisonArray))
+  assert.equal(sanitize(poisonArray), '[array]')
+
+  // And a guard that mangled every value would pass the two cases above, so
+  // the ordinary ones are asserted here as well.
+  assert.equal(sanitize('a plain string'), 'a plain string')
+  assert.equal(sanitize(42), '42')
+  assert.equal(sanitize(null), 'null')
+  assert.equal(sanitize(true), 'true')
+  assert.equal(sanitize({ toString: () => 'a real custom toString' }), 'a real custom toString')
+  assert.equal(sanitize(['a', 'b']), 'a,b')
+})

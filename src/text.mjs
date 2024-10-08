@@ -81,6 +81,32 @@ export const CONTROL_CLASSES = Object.freeze({
   bidi: Object.freeze([0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069]),
 })
 
+/**
+ * Render a value as text without trusting it to be renderable.
+ *
+ * `String(value)` throws `Cannot convert object to primitive value` for an
+ * object carrying a non-callable own `toString`, and `{"toString": {}}` in a
+ * document is enough to reach it -- `JSON.parse` produces exactly that shape.
+ * Uncaught at this boundary it costs the whole report: exit 2 with EMPTY
+ * stdout, which is the shape this contract reserves for a configuration error,
+ * and one malformed document suppresses the findings for every other input in
+ * the same run.
+ *
+ * A value that cannot be rendered is DESCRIBED by its shape, never reproduced.
+ * That is what the rest of this module does with untrusted content anyway, and
+ * it keeps a neighbouring field -- the credential somebody pasted into the same
+ * object -- out of the report along with everything else.
+ */
+function renderable(value) {
+  if (typeof value === 'string') return value
+  try {
+    return String(value)
+  } catch {
+    if (Array.isArray(value)) return '[array]'
+    return `[${value === null ? 'null' : typeof value}]`
+  }
+}
+
 export const EXCERPT_LIMIT = 160
 
 /**
@@ -92,14 +118,14 @@ export const EXCERPT_LIMIT = 160
  */
 export function sanitize(value, limit = EXCERPT_LIMIT) {
   if (!Number.isInteger(limit) || limit < 1) throw new TypeError('Excerpt limit must be a positive integer')
-  const flattened = String(value).replace(CONTROL, ' ').replace(/\s+/g, ' ').trim()
+  const flattened = renderable(value).replace(CONTROL, ' ').replace(/\s+/g, ' ').trim()
   if (flattened.length <= limit) return flattened
   return `${flattened.slice(0, limit)}...`
 }
 
 /** Escape one path segment for a JSON Pointer, per RFC 6901, then sanitise it. */
 export function escapePointerSegment(segment) {
-  return sanitize(String(segment).replaceAll('~', '~0').replaceAll('/', '~1'), 120)
+  return sanitize(renderable(segment).replaceAll('~', '~0').replaceAll('/', '~1'), 120)
 }
 
 const UNPARSEABLE = 'the document could not be parsed as JSON'
@@ -153,7 +179,7 @@ function describeParseFailure(message) {
  * concluded, and the generic sentence is used instead.
  */
 export function parseFailureDetail(error) {
-  const message = String(error?.message ?? '')
+  const message = renderable(error?.message ?? '')
   const detail = describeParseFailure(message)
   return detail.includes('"') ? UNPARSEABLE : detail
 }
