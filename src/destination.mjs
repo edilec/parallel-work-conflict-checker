@@ -46,6 +46,16 @@ export class DestinationError extends Error {
  * Measured across this catalog: seven tools guarded 1 and 3 but not 2, and
  * three of them destroyed a file outside their root while exiting 0.
  *
+ * `inputs` must be every file the run RESOLVED, not every file it opened. A
+ * planner that only *names* the paths it reasons about passed just its plan and
+ * its config here, and a hard link sitting outside its root, sharing an inode
+ * with a source file inside it, was written straight through: the parent
+ * resolved outside the root exactly as that tool requires, the inode matched
+ * nothing in `inputs`, and the run exited 0 saying the packet was written.
+ * Anything the tool stats, lists or decides about belongs in `inputs`, and
+ * recording a path before reading it costs nothing when the read then fails.
+ * This tool stats and reads exactly one path, the lanes document, and passes it.
+ *
  * `root` is optional and passing `null` is a real answer, not a shortcut: a tool
  * whose destination is an arbitrary path the caller names has nothing for check
  * 2 to enforce, and inventing a root for it would refuse legitimate absolute
