@@ -3,6 +3,44 @@
 All notable changes to this tool are recorded here. Rule ids are part of the
 public contract: renaming one is a breaking change and gets its own entry.
 
+## Unreleased
+
+Fixes from adversarial verification of 0.1.0. Every one of them is pinned by a
+test that fails when the fix is removed.
+
+- **An undetermined intersection is no longer read as "no match".** Four scans
+  past the lane-pair loop -- the shared-artifact claim scan, the scan for which
+  lanes change an artifact, the scan for another lane claiming a changed path,
+  and a lane's own-ownership scan -- treated a bounded search that ran out of
+  room as a definite negative. At the default limits that reported `pass` with
+  zero findings and exit 0 while an error was suppressed. Each now records
+  `overlap-unresolved`, so the run is `incomplete` and exits 2.
+- **The time budget bounds the whole run.** `timeoutMs` was consulted only
+  inside the lane-pair loop; pattern compilation, the shared-artifact scan and
+  the change-set scan ran afterwards with no clock at all. The single
+  `time-budget-exceeded` finding is now emitted after every phase it bounds and
+  its message no longer claims the expiry happened among the lane pairs.
+- **An over-long brace pattern is a finding, not a crashed process.**
+  `expandBraces` recursed once per brace group before any length check, so a
+  24 KB document -- 2.3% of `maxDocumentBytes` -- exited 2 with empty stdout and
+  a stack overflow. The character limit is now enforced before expansion.
+- **One lockfile spelled two ways is one lockfile.** `lockfile-shared-undeclared`
+  grouped lanes by the raw declared string, so `./package-lock.json` and
+  `package-lock.json` landed in separate groups and the error vanished. Grouping
+  is on the compiled path, as every other rule already compared.
+- **A repeated lane id is not a `dependsOn` cycle.** Duplicate ids collapsed into
+  one node in the topological sort and produced "the dependsOn graph has a cycle,
+  so no merge order exists for 0 lane(s)" on a document with no `dependsOn` key.
+  The merge order is still withdrawn; the explanation was the part that was false.
+- **New rule `single-lane-declared` (warning).** A one-lane document compared no
+  pair and still rendered "PASS no lane conflict found". It stays a pass and
+  exits 0, and now says what it did. 24 rules.
+- **A value that cannot be stringified is described, not thrown on.**
+  `String({toString: {}})` throws; `sanitize` now renders such a value as its
+  shape (`[object]`, `[array]`) and never reproduces it.
+- `O_NOFOLLOW` moved beside the destination guard it backs up and is pinned by a
+  test that watches the kernel refuse a planted link.
+
 ## 0.1.0
 
 First release.
