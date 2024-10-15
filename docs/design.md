@@ -65,17 +65,26 @@ says which pattern and what to write instead.
 ## Bounds, and the third answer
 
 Every search is bounded. A search that reaches its bound does not return
-"disjoint" — it returns `{ resolved: false }`, and the caller records the pair as
-undetermined, emits `overlap-unresolved`, marks the report incomplete and
-withdraws the merge order.
+"disjoint" — it returns `{ resolved: false }`, and the caller records the
+comparison as undetermined, emits `overlap-unresolved`, marks the report
+incomplete and withdraws the merge order. Every caller, not only the lane-pair
+loop: the scan for a lane claiming a shared artifact, the scan for which lanes
+change one, the scan for another lane owning a changed path and a lane's own
+ownership scan each ask the same engine the same kind of question, and each of
+them read "I did not finish" as "no" until adversarial verification showed a
+document at the default limits reporting `pass` with an error suppressed.
 
 That third answer is the point. The bound exists so a pathological pattern pair
 cannot hang the run; if hitting it were reported as "no overlap", the bound
 would have converted a resource limit into a wrong green.
 
-The same applies to the time budget. It is checked before the pair loop and at
-every comparison boundary, and the clock it reads is injected as a default
-parameter, so a test can step it past the deadline without waiting.
+The same applies to the time budget, and it bounds the whole run rather than
+one phase of it: pattern compilation, the lane-pair loop, the shared-artifact
+scan and the change-set scan all read the clock, and one `time-budget-exceeded`
+finding is emitted after the last of them. The clock is injected as a default
+parameter, so a test can step it past the deadline without waiting — and a test
+that charges a millisecond per reading can let the cheap phases finish and
+expire inside the phase it means to exercise.
 
 ## Shared artifacts and the integration owner
 
