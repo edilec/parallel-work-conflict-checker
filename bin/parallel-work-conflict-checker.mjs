@@ -63,7 +63,9 @@ What cannot happen:
     the report "incomplete", withdraw the merge order, and exit 2.
   - A generated file changed by two or more lanes with no declared
     integrationOwner is an error, not a note.
-  - A document that declares no lanes is not a pass.
+  - A document that declares no lanes is not a pass, and a document that
+    declares one lane says that it compared no pair rather than reporting "no
+    conflict found" on nothing at all.
 
 Exit codes:
   0  the lanes were compared and no conflict was found
