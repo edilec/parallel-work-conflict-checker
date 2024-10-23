@@ -825,9 +825,16 @@ const VERDICT = Object.freeze({
 export function formatReport(reportDocument) {
   const lines = [`${VERDICT[reportDocument.status]} (${TOOL_ID})`]
   const s = reportDocument.summary
+  /**
+   * `pairsUnresolved` counts every comparison the bounded engine did not
+   * decide, not only lane pairs -- a changed path against a shared artifact and
+   * against another lane's patterns are counted here too. The JSON field keeps
+   * its name because it is part of schemaVersion 1; the human line says what it
+   * actually counts.
+   */
   lines.push(
     `lanes ${s.lanes}, patterns ${s.patterns}, changes ${s.changes}, `
-    + `pairs compared ${s.pairsCompared}, pairs undetermined ${s.pairsUnresolved}, `
+    + `pairs compared ${s.pairsCompared}, undetermined comparisons ${s.pairsUnresolved}, `
     + `shared artifacts ${s.sharedArtifacts}, errors ${s.errors}, warnings ${s.warnings}`,
   )
   if (reportDocument.mergeOrder !== null) {
