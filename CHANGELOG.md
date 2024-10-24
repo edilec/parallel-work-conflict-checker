@@ -15,6 +15,16 @@ test that fails when the fix is removed.
   room as a definite negative. At the default limits that reported `pass` with
   zero findings and exit 0 while an error was suppressed. Each now records
   `overlap-unresolved`, so the run is `incomplete` and exits 2.
+- **The fifth undetermined site is now pinned.** `sharedMatch`, the lookup that
+  answers "is this changed path a declared shared artifact?", already refused to
+  read an undetermined search as a miss -- and nothing failed when that refusal
+  was deleted, because every other undetermined guard sits in a loop that runs
+  earlier in the same pass, so any document reaching one of them had already
+  made the run incomplete. A fixture where each lane's first change matches the
+  costly artifact cheaply lets the shared-artifact scan break out before the
+  long path, leaving the lookup as the only undetermined answer in the run.
+  Removing the guard now turns exit 2 and `incomplete` into exit 0 and `pass`,
+  and fails that test. Behaviour unchanged; the guarantee is defended.
 - **The time budget bounds the whole run.** `timeoutMs` was consulted only
   inside the lane-pair loop; pattern compilation, the shared-artifact scan and
   the change-set scan ran afterwards with no clock at all. The single

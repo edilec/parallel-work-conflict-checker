@@ -533,6 +533,19 @@ export async function checkParallelWork(options = {}) {
     })
   }
 
+  /**
+   * Is this changed path one of the declared shared artifacts?
+   *
+   * Three answers, not two. `{ resolved: false }` means the bounded search ran
+   * out of room, and the caller must not read it as "no". Reading it as "no"
+   * does not merely lose a finding: the path falls through to the ownership
+   * rules, earns a WARNING there, and the run exits 0 -- an unexamined question
+   * answered green, about a different question.
+   *
+   * One artifact that cannot be decided settles the whole lookup, because "none
+   * of them matched" is a claim about every artifact and a search that stopped
+   * cannot support it.
+   */
   const sharedMatch = (segments) => {
     for (const artifact of shared) {
       const hit = matchesPath(artifact.segments, segments, globBudget)

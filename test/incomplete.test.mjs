@@ -217,6 +217,63 @@ test('an undetermined change against a shared artifact is not an untouched artif
   assert.equal(findingsFor(roomy.report, 'shared-artifact-unowned').length, 1)
 })
 
+/**
+ * The one undetermined answer that is a lookup rather than a loop.
+ *
+ * `sharedMatch` answers "is this changed path one of the declared shared
+ * artifacts?" for every change-set rule. The other guards in this file sit in
+ * loops that also run earlier in the same pass, so any document that reaches
+ * one of them reaches the earlier one too and the run is already incomplete --
+ * which is precisely why deleting THIS guard left the whole suite green while
+ * every sibling was pinned. The fixture is built so the lookup is the only
+ * undetermined answer in the run: each lane's first change matches the costly
+ * artifact cheaply, so the shared-artifact scan breaks out before it reaches
+ * the long path, and only the change-set lookup asks the expensive question.
+ *
+ * Measured against this engine: the costly artifact resolves against the short
+ * path in 120 product states and against the long one in 200, so a budget of
+ * 150 separates them and nothing else in the document comes near it.
+ */
+const COSTLY_ARTIFACT = '**/*a*b*c*d*e*f*g*h*.js'
+
+test('an undetermined shared-artifact lookup is not a path outside every shared artifact', async (t) => {
+  const root = await makeTree({
+    'lanes.json': lanesDocument(
+      [
+        { id: 'ops', owns: ['gen/**'], changes: ['abcdefgh.js', 'src/y/z/aXbXcXdXeXfXgXhX.js'] },
+        { id: 'alpha', owns: ['src/**/*.mjs'], changes: ['src/a/x.mjs'] },
+      ],
+      { sharedArtifacts: ['gen/hit/**', COSTLY_ARTIFACT], integrationOwner: 'ops' },
+    ),
+  })
+  t.after(() => cleanup(root))
+
+  const bounded = runReport(root, ['--max-product-states', '150'])
+  assert.equal(bounded.report.status, 'incomplete')
+  assert.equal(bounded.status, 2)
+  assert.equal(bounded.report.mergeOrder, null)
+  /**
+   * The claim it must not make: "that path is not a shared artifact". Reading
+   * the undetermined lookup as a miss does not merely lose the finding -- it
+   * sends the path on into the ownership rules, where it earns a WARNING and
+   * the run exits 0. An unexamined question became a green verdict about a
+   * different question.
+   */
+  assert.deepEqual(findingsFor(bounded.report, 'change-outside-declared-ownership'), [])
+  const undetermined = findingsFor(bounded.report, 'overlap-unresolved')
+  assert.equal(undetermined.length, 1)
+  assert.equal(undetermined[0].location.pointer, '/lanes/0/changes/1')
+  assert.match(undetermined[0].message, /is a declared shared artifact/)
+
+  // Not a guard that refuses everything: given room to finish, the same
+  // document resolves the lookup, finds the path really is a shared artifact,
+  // and passes with nothing to report.
+  const roomy = runReport(root, ROOMY)
+  assert.equal(roomy.status, 0)
+  assert.equal(roomy.report.status, 'pass')
+  assert.deepEqual(roomy.report.findings, [])
+})
+
 test('an undetermined match against another lane is not an absent claim', async (t) => {
   const root = await makeTree({
     'lanes.json': lanesDocument([
