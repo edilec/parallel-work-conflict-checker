@@ -140,11 +140,59 @@ test('a leading "./" is stripped from a pattern, exactly as it is from a path', 
 })
 
 test('a concrete path is validated as strictly as a pattern', () => {
+  /**
+   * "As strictly as a pattern" is a claim about every rule compilePattern
+   * applies, so every one of them is checked here with the refusal it gives.
+   * The previous version of this test checked three of them, and the limit on
+   * a path's length, its segment count, its backslashes and its empty segments
+   * could each be deleted with the whole suite still green -- while a change
+   * path that compiles when it should not is a change compared against the
+   * wrong file.
+   */
   assert.equal(compileLiteralPath('src/app.mjs').ok, true)
   assert.equal(compileLiteralPath('./src/app.mjs').ok, true)
-  assert.equal(compileLiteralPath('/etc/passwd').ok, false)
-  assert.equal(compileLiteralPath('../outside').ok, false)
-  assert.equal(compileLiteralPath('').ok, false)
+
+  for (const [path, why] of [
+    ['', /non-empty string/],
+    ['/etc/passwd', /absolute path is not supported/],
+    ['../outside', /".." segment is not supported/],
+    ['src/./app.mjs', /"." segment is not supported/],
+    ['a'.repeat(201), /at most 200 characters/],
+    ['src\\app.mjs', /backslash is not a path separator/],
+    [Array.from({ length: 33 }, () => 'a').join('/'), /at most 32 segments/],
+    ['src//app.mjs', /empty path segment/],
+    ['src/', /empty path segment/],
+  ]) {
+    const refused = compileLiteralPath(path)
+    assert.equal(refused.ok, false, `"${path}" should not compile`)
+    assert.match(refused.why, why)
+  }
+
+  // Each limit is silent one step inside it, so none of the refusals above is a
+  // guard that simply refuses everything.
+  assert.equal(compileLiteralPath('a'.repeat(200)).ok, true)
+  assert.equal(compileLiteralPath(Array.from({ length: 32 }, () => 'a').join('/')).ok, true)
+})
+
+test('an unclosed brace is refused, and a nested one is refused through its parent', () => {
+  // Refused, and refused by NAME: without the unclosed check the same pattern
+  // still fails, but as "a brace group needs at least two alternatives" -- a
+  // different diagnosis of a different mistake -- and a pattern carrying a
+  // third alternative expands its own suffix forever instead.
+  const top = expandBraces('a{b,c')
+  assert.equal(top.ok, false)
+  assert.match(top.why, /unclosed "\{" is not a pattern/)
+
+  // The nested case reaches the same refusal through a recursive expansion, and
+  // the parent has to propagate it: without that propagation the caller reads
+  // `patterns` off a failure and the process dies with a TypeError.
+  const nested = expandBraces('{a,b}/{c,d')
+  assert.equal(nested.ok, false)
+  assert.match(nested.why, /unclosed "\{" is not a pattern/)
+
+  // Not a guard that refuses every brace: the closed forms still expand.
+  assert.deepEqual(expandBraces('a{b,c}').patterns, ['ab', 'ac'])
+  assert.deepEqual(expandBraces('{a,b}/{c,d}').patterns, ['a/c', 'a/d', 'b/c', 'b/d'])
 })
 
 test('a search that reaches its bound reports "not resolved", never "disjoint"', () => {
