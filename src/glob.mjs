@@ -120,14 +120,20 @@ export function expandBraces(pattern, limit = GLOB_LIMITS.maxBraceExpansions, ma
   return { ok: true, patterns: out }
 }
 
-/** Split one segment into literal / any-one / any-run tokens, collapsing `**` runs. */
+/**
+ * Split one segment into literal / any-one / any-run tokens.
+ *
+ * No run of stars to collapse: `compilePattern` refuses any segment containing
+ * `**` before it gets here -- `**` is supported only as a whole segment -- so
+ * two adjacent stars never reach this loop. The collapse this function used to
+ * carry was a branch nothing could take, which is the third such line found in
+ * this module; a line that cannot fire cannot be defended by a test either.
+ */
 function tokenizeSegment(segment) {
   const tokens = []
   for (const character of segment) {
-    if (character === '*') {
-      if (tokens.length > 0 && tokens[tokens.length - 1].kind === 'star') continue
-      tokens.push({ kind: 'star' })
-    } else if (character === '?') tokens.push({ kind: 'one' })
+    if (character === '*') tokens.push({ kind: 'star' })
+    else if (character === '?') tokens.push({ kind: 'one' })
     else tokens.push({ kind: 'literal', character })
   }
   return tokens
