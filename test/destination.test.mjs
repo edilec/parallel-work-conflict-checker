@@ -151,6 +151,33 @@ test('a destination whose parent directory does not exist is refused, not create
   assert.match(result.stderr, /directory that does not exist/)
 })
 
+test('a destination that cannot be inspected is refused before anything is opened', async (t) => {
+  /**
+   * `lstat` fails for reasons other than "it is not there": a path whose parent
+   * component is a regular file gives ENOTDIR, an unsearchable directory gives
+   * EACCES. Only ENOENT means the destination is free; everything else means
+   * the guard could not look, and a guard that could not look must refuse
+   * rather than carry on with `existing` still null. Nothing failed when that
+   * distinction was deleted -- the write then failed anyway, but one step later
+   * and with the wrong diagnosis.
+   */
+  const root = await fixture(t)
+  const occupied = join(root, 'a-file')
+  await writeFile(occupied, 'keep me')
+
+  const result = run(root, join(occupied, 'report.json'))
+
+  assert.equal(result.status, 2)
+  assert.equal(result.stdout, '')
+  assert.match(result.stderr, /could not be inspected: ENOTDIR/)
+  assert.equal(await readFile(occupied, 'utf8'), 'keep me')
+
+  // Contrast: ENOENT is exactly the case that must NOT be refused.
+  const fresh = run(root, join(root, 'fresh.json'))
+  assert.equal(fresh.status, 1, 'the document fails, so the run itself exits 1')
+  assert.notEqual(fresh.stdout, '')
+})
+
 test('the written report is byte-identical to the report on stdout', async (t) => {
   const root = await fixture(t)
   const destination = join(root, 'report.json')

@@ -178,6 +178,15 @@ test('a limit value that is not a positive integer is refused', async (t) => {
   await assert.rejects(checkParallelWork({ lanes, limits: { timeoutMs: -1 } }), /integer of 0 or more/)
 })
 
+test('a missing lanes path is refused by the library, not read as an empty document', async () => {
+  // The CLI always supplies a string, so nothing exercised this; a library
+  // caller that omits the path must get an error rather than a run over
+  // `undefined` that reports whatever `stat(undefined)` happens to do.
+  for (const options of [{}, { lanes: '' }, { lanes: 7 }, { lanes: null }]) {
+    await assert.rejects(checkParallelWork(options), /A lanes document path is required/)
+  }
+})
+
 test('every documented limit has a CLI flag, and every CLI limit flag is documented', () => {
   const help = runCli(['--help']).stdout
   const flags = new Map([
