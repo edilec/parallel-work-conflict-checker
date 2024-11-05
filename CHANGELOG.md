@@ -50,6 +50,20 @@ test that fails when the fix is removed.
   shape (`[object]`, `[array]`) and never reproduces it.
 - `O_NOFOLLOW` moved beside the destination guard it backs up and is pinned by a
   test that watches the kernel refuse a planted link.
+- **Guarantees that were true and undefended are now pinned.** A second
+  adversarial pass neutralised every conditional in `src/` one at a time and
+  found fourteen the suite did not notice. Behaviour is unchanged; the tests
+  are not. Newly defended: every rule `compileLiteralPath` applies (its test
+  claimed "as strictly as a pattern" and checked three of eight); the refusal
+  of an unclosed `{`, directly and through a parent expansion that has to
+  propagate it; the rule-id and message keys of the documented finding sort,
+  neither of which decided anything in any fixture; a destination whose `lstat`
+  fails for a reason other than ENOENT; and `checkParallelWork`'s own argument
+  check.
+- One more branch that could not fire is gone: `tokenizeSegment` collapsed runs
+  of `*`, and `compilePattern` refuses any segment containing `**` before it is
+  tokenized, so two adjacent stars never reached it. Instrumented and driven
+  over 400000 random patterns: reached 0 times.
 
 ## 0.1.0
 
