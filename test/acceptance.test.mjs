@@ -234,3 +234,62 @@ test('3e. a lane other than the integration owner may not claim a shared artifac
   assert.equal(claimed.length, 1)
   assert.match(claimed[0].message, /lane "api" claims ownership/)
 })
+
+/**
+ * The merge order, which is the fourth thing this tool emits and the one
+ * nothing checked beyond "it is not null".
+ *
+ * Every fixture in the suite used a graph one level deep or no graph at all, so
+ * the loop that releases a lane once its last dependency is placed never had to
+ * release anything: disabling it left the whole suite green while a legal chain
+ * came back as `dependency-cycle` with no merge order at all.
+ */
+test('4. dependsOn produces a merge order, deepest dependency first', async (t) => {
+  const chain = await makeTree({
+    'lanes.json': lanesDocument([
+      { id: 'd', owns: ['d/**'], dependsOn: ['c'] },
+      { id: 'c', owns: ['c/**'], dependsOn: ['b'] },
+      { id: 'b', owns: ['b/**'], dependsOn: ['a'] },
+      { id: 'a', owns: ['a/**'] },
+    ]),
+  })
+  t.after(() => cleanup(chain))
+
+  const linear = runReport(chain)
+  assert.equal(linear.status, 0)
+  assert.equal(linear.report.status, 'pass')
+  assert.deepEqual(linear.report.mergeOrder, ['a', 'b', 'c', 'd'])
+  assert.deepEqual(linear.report.findings, [])
+
+  // A diamond, so the order is not simply the reverse of the declared order:
+  // both middles wait for the base and the top waits for both, and lanes that
+  // become ready together are ordered by code unit.
+  const diamond = await makeTree({
+    'lanes.json': lanesDocument([
+      { id: 'top', owns: ['t/**'], dependsOn: ['left', 'right'] },
+      { id: 'left', owns: ['l/**'], dependsOn: ['base'] },
+      { id: 'right', owns: ['r/**'], dependsOn: ['base'] },
+      { id: 'base', owns: ['b/**'] },
+    ]),
+  })
+  t.after(() => cleanup(diamond))
+
+  const branched = runReport(diamond)
+  assert.equal(branched.status, 0)
+  assert.deepEqual(branched.report.mergeOrder, ['base', 'left', 'right', 'top'])
+
+  // And a real cycle is still a cycle: the order is withdrawn and the run fails,
+  // so the placement above is not a sort that accepts anything it is given.
+  const cyclic = await makeTree({
+    'lanes.json': lanesDocument([
+      { id: 'a', owns: ['a/**'], dependsOn: ['b'] },
+      { id: 'b', owns: ['b/**'], dependsOn: ['a'] },
+    ]),
+  })
+  t.after(() => cleanup(cyclic))
+
+  const looped = runReport(cyclic)
+  assert.equal(looped.status, 1)
+  assert.equal(looped.report.mergeOrder, null)
+  assert.match(findingFor(looped.report, 'dependency-cycle').message, /cycle/)
+})
