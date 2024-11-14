@@ -52,14 +52,27 @@ test that fails when the fix is removed.
   test that watches the kernel refuse a planted link.
 - **Guarantees that were true and undefended are now pinned.** A second
   adversarial pass neutralised every conditional in `src/` one at a time and
-  found fourteen the suite did not notice. Behaviour is unchanged; the tests
-  are not. Newly defended: every rule `compileLiteralPath` applies (its test
-  claimed "as strictly as a pattern" and checked three of eight); the refusal
-  of an unclosed `{`, directly and through a parent expansion that has to
-  propagate it; the rule-id and message keys of the documented finding sort,
-  neither of which decided anything in any fixture; a destination whose `lstat`
-  fails for a reason other than ENOENT; and `checkParallelWork`'s own argument
-  check.
+  found twenty-four the suite did not notice. Nineteen now fail a test when they
+  are removed, one could not fire and is gone, and four are recorded below as
+  unable to change any output. Behaviour is unchanged throughout; the tests are
+  not. Newly defended: **the whole lanes schema** -- `schemaVersion`,
+  `integrationOwner`, `sharedArtifacts`, `lanes`, each lane and each of its
+  string arrays, which had no test file at all, so a document declaring
+  `schemaVersion: "2"` was accepted and `owns: "src/**"` took the run down with
+  a TypeError; **the merge order**, whose every fixture was one level deep, so
+  the step that releases a lane once its last dependency is placed could be
+  disabled and a legal four-lane chain came back as `dependency-cycle`; every
+  rule `compileLiteralPath` applies (its test claimed "as strictly as a pattern"
+  and checked three of eight); the refusal of an unclosed `{`, directly and
+  through a parent expansion that has to propagate it; the rule-id and message
+  keys of the documented finding sort, neither of which decided anything in any
+  fixture; a destination whose `lstat` fails for a reason other than ENOENT; and
+  `checkParallelWork`'s own argument check.
+- Four conditionals are deliberately left unpinned, because no input this tool
+  accepts can distinguish them: the two that confine a destination to a root,
+  which this tool does not have and passes as `null`; the `Unknown rule id`
+  throw, which only an edit to this source can reach; and the string fast path
+  in `renderable`, where `String(value)` returns the same string.
 - One more branch that could not fire is gone: `tokenizeSegment` collapsed runs
   of `*`, and `compilePattern` refuses any segment containing `**` before it is
   tokenized, so two adjacent stars never reached it. Instrumented and driven
