@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1",
+  "lanes": [
+    {
+      "id": "search",
+      "owns": ["src/**/*.mjs", "docs/**"],
+      "changes": ["src/search/index.mjs", "package-lock.json", "scripts/release.sh"]
+    },
+    {
+      "id": "ingest",
+      "owns": ["src/ingest/**"],
+      "changes": ["src/ingest/reader.mjs", "package-lock.json"],
+      "dependsOn": ["search"]
+    },
+    {
+      "id": "docs",
+      "owns": ["docs/guides/*.md"]
+    }
+  ]
+}
