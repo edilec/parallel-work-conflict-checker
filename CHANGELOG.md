@@ -3,7 +3,7 @@
 All notable changes to this tool are recorded here. Rule ids are part of the
 public contract: renaming one is a breaking change and gets its own entry.
 
-## Unreleased
+## 0.1.0 — 2026-10-14
 
 Fixes from adversarial verification of 0.1.0. Every one of them is pinned by a
 test that fails when the fix is removed.
@@ -78,7 +78,7 @@ test that fails when the fix is removed.
   tokenized, so two adjacent stars never reached it. Instrumented and driven
   over 400000 random patterns: reached 0 times.
 
-## 0.1.0
+Initial implementation:
 
 First release.
 
